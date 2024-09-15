@@ -1,4 +1,4 @@
-use std::{env, process, };
+use std::{env, process, fs };
 use colored::*;
 
 use minigrep::Config;
