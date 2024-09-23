@@ -1,0 +1,30 @@
+[package]
+name = "movie_app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Web framework for handling HTTP requests/responses and serving files
+actix-web = "4.0.0"
+actix-files = "0.6"
+actix-cors = "0.7.0"
+
+# MongoDB integration and BSON handling
+mongodb = "3.1.0"
+bson = { version = "2", features = ["chrono-0_4"] }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# DateTime handling
+chrono = "0.4"
+
+# Serialization and Deserialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# HTTP client for making API requests to TMDB
+reqwest = { version = "0.11", features = ["json"] }
+
+# For managing environment variables like API keys and database URIs
+dotenv = "0.15"

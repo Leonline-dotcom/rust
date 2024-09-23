@@ -1,9 +1,20 @@
 # Ignore node_modules
 node_modules/
-
+target/
 # Ignore environment variables
 .env
 
 # Ignore compiled files
 *.log
+*.exp
+*.pdb
+*.h
+*.obj
+*.lib
 *.out
+*.rmeta
+*.d
+*.o
+*.lock
+*.bin
+*.dll
