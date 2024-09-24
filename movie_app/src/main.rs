@@ -7,7 +7,6 @@ use futures::StreamExt;
 use mongodb::{bson::doc, options, Client, Collection, Cursor, IndexModel};
 use dotenv::dotenv;
 use serde::{Serialize, Deserialize};
-use tokio;
 use std::{env,os,process};
 use std::error::Error;
 
@@ -73,7 +72,7 @@ async fn search_movies(path: web::Path<String>) -> impl Responder {
 #[get("/reviews")]
 async fn get_reviews(client: web::Data<Client>)-> impl Responder{
     let collection: Collection<Review> =client.database(DB_NAME).collection::<Review>(COLL_NAME);
-    println!("you accessed it");
+    println!("you accessed the Collection!");
     let mut reviews: Vec<Review> = Vec::new();
     match collection.find(doc! {}).await  {
         Ok(mut cursor) => {
@@ -117,8 +116,8 @@ let client = Client::with_uri_str(mongodb_uri).await.expect("failed to connect")
 
 HttpServer::new(move || {
     App::new()
-        .app_data(web::Data::new(client.clone()))  // Share MongoDB client across requests
-        .service(submit_review)  // Route to submit reviews
+        .app_data(web::Data::new(client.clone()))  
+        .service(submit_review) 
         .service(get_movies)
         .service(search_movies)
         .service(get_reviews)
