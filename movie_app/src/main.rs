@@ -1,13 +1,13 @@
 mod models;
 
-
 use actix_web::{get, post, web::{self, scope}, App, HttpResponse, HttpServer, Responder};
 use actix_files as fs;
 use reqwest;
-use actix_cors::Cors;
-use mongodb::{bson::doc, options::IndexOptions, Client,options::{ClientOptions, ResolverConfig}, Collection, IndexModel};
+use futures::StreamExt;
+use mongodb::{bson::doc, options, Client, Collection, Cursor, IndexModel};
 use dotenv::dotenv;
 use serde::{Serialize, Deserialize};
+use tokio;
 use std::{env,os,process};
 use std::error::Error;
 
@@ -25,11 +25,14 @@ async fn get_uri() -> String{
     env::var("MONGODB_URI").expect("MONGODB_URI must be set").to_string()
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize,Debug)]
 struct Review {
+    title: String,
     username: String,
     review: String,
+    posterpath: String,
 }
+
 
 #[post("/submit_review")]
 async fn submit_review(client: web::Data<Client>, review: web::Json<Review>) -> impl Responder {
@@ -43,8 +46,21 @@ async fn submit_review(client: web::Data<Client>, review: web::Json<Review>) -> 
 #[get("/movies")]
 async fn get_movies() -> impl Responder {
     let api_key = get_api_key().await;
-    let api_url = format!("{}/discover/movie?sort_by=popularity.desc&{}", BASE_URL, api_key);
-    println!("{}",api_url);
+    let api_url = format!("{}/discover/movie?sort_by=popularity.desc&api_key={}", BASE_URL, api_key);
+    match reqwest::get(api_url).await {
+        Ok(resp) => match resp.text().await {
+            Ok(text) => HttpResponse::Ok().body(text),
+            Err(_) => HttpResponse::InternalServerError().body("Failed to read API response"),
+        },
+        Err(_) => HttpResponse::InternalServerError().body("Failed to fetch data from external API"),
+    }   
+}
+#[get("/movies/search/{searchTerm}")]
+async fn search_movies(path: web::Path<String>) -> impl Responder {
+    let search_term = path.into_inner();
+    let api_key = get_api_key().await;
+    let api_url = format!("{}/search/movie?api_key={}&query={}", BASE_URL, api_key,search_term);
+    println!("{}/search/movie?api_key={}&query={}", BASE_URL, api_key,search_term);
     match reqwest::get(api_url).await {
         Ok(resp) => match resp.text().await {
             Ok(text) => HttpResponse::Ok().body(text),
@@ -53,15 +69,39 @@ async fn get_movies() -> impl Responder {
         Err(_) => HttpResponse::InternalServerError().body("Failed to fetch data from external API"),
     }
 }
-#[post("/fetch_external_api")]
-async fn fetch_external_api() -> impl Responder {
-    let api_url = "https://jsonplaceholder.typicode.com/todos";
-    match reqwest::get(api_url).await {
-        Ok(resp) => match resp.text().await {
-            Ok(text) => HttpResponse::Ok().body(text),
-            Err(_) => HttpResponse::InternalServerError().body("Failed to read API response"),
-        },
-        Err(_) => HttpResponse::InternalServerError().body("Failed to fetch data from external API"),
+
+#[get("/reviews")]
+async fn get_reviews(client: web::Data<Client>)-> impl Responder{
+    let collection: Collection<Review> =client.database(DB_NAME).collection::<Review>(COLL_NAME);
+    println!("you accessed it");
+    let mut reviews: Vec<Review> = Vec::new();
+    match collection.find(doc! {}).await  {
+        Ok(mut cursor) => {
+            println!("Cursor retrieved, iterating over reviews");
+            while let Some(doc_result) = cursor.next().await {
+                match doc_result {
+                    Ok(review) => {
+                        reviews.push(review);
+                    }
+                    Err(e) => {
+                        println!("Error deserializing document: {:?}", e);
+                        return HttpResponse::InternalServerError().body("Error reading a review document");
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            println!("Failed to retrieve cursor: {:?}", e); 
+            return HttpResponse::InternalServerError().body("Failed to query the database");
+        }
+    }
+
+    match serde_json::to_string(&reviews) {
+        Ok(json) => HttpResponse::Ok().body(json), 
+        Err(e) => {
+            println!("Failed to serialize reviews: {:?}", e);  
+            HttpResponse::InternalServerError().body("Failed to serialize reviews")
+        }
     }
 }
 
@@ -74,17 +114,14 @@ let mongodb_uri = get_uri().await;
 
 //     // A Client is needed to connect to MongoDB:
 let client = Client::with_uri_str(mongodb_uri).await.expect("failed to connect");
-// //    // Print the databases in our MongoDB cluster:
-// //    println!("Databases:");
-// //    for name in client.list_database_names().await? {
-// //       println!("- {}", name);
-// //    }
+
 HttpServer::new(move || {
     App::new()
         .app_data(web::Data::new(client.clone()))  // Share MongoDB client across requests
         .service(submit_review)  // Route to submit reviews
         .service(get_movies)
-        .service(fetch_external_api)  // Route to fetch external API
+        .service(search_movies)
+        .service(get_reviews)
         .service(fs::Files::new("/", "./frontend").index_file("index.html"))
 })
 .bind(("127.0.0.1", 8080))?
